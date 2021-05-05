@@ -1,0 +1,320 @@
+---
+title: "Analysis of Airbnb"
+author: "Qiren Wang"
+date: "4/5/2021"
+output: html_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+> Dataset from Airbnb Data Open Resources: <http://insideairbnb.com/get-the-data.html>
+
+```{r library requirement}
+#############################################
+         # Library Requirement #
+#############################################
+library(tidytext) # Package tidytext for conversion of text to and from tidy formats
+library(dplyr) # Package dplyr is for data manipulation
+library(tidyverse) # Collection of R packages designed for data works harmoniously with other packages
+library(readr) #  Package readr is to provide a fast and friendly way to read rectangular data (like csv, tsv, and fwf).
+# install.packages("visdat") 
+library(visdat) # Package for visulizing plot of the missing data 
+library(ggplot2) # Package for multiple ploting
+library(DT) # Package for HTML display of data
+library(corrplot) # Package for correlation analysis, confidence interval
+# install.packages("hrbrthemes")
+library(hrbrthemes)# A compilation of extra 'ggplot2' themes, scales and utilities, including a spell check function for plot label fields and an overall emphasis on typography
+library(cowplot) # he "cowplot" package is a simple add-on to ggplot. It provides various features that help with creating publication-quality figures, such as a set of themes
+# install.packages("webmap")
+library(ggmap) # Package ggmap is a collection of functions to visualize spatial data and models on top of static maps from various online sources (e.g Google Maps)
+```
+
+```{r data preperation}
+#############################################
+          # Data Preparation #
+#############################################
+Airbnb_Shanghai_2021 <- read_csv("/Users/wqr/Desktop/MSDS\ 597\ Final\ Project/Shanghai\ Dataset/listings.csv")
+head(Airbnb_Shanghai_2021, 100) # Check the dataset
+dim(Airbnb_Shanghai_2021) # To understand the dimention of the dataset
+vis_miss(Airbnb_Shanghai_2021) # To view the missing values in the dataset and creat a visulization graph
+datatable(Airbnb_Shanghai_2021 ,extensions = 'Buttons', options = list(dom = 'Bfrtip', buttons = I('colvis')))
+```
+```{r}
+#############################################
+     # Correlation Metrics Analysis #
+#############################################
+Airbnb_Shanghai_2021_cor <- Airbnb_Shanghai_2021[, sapply(Airbnb_Shanghai_2021, is.numeric)]
+Airbnb_Shanghai_2021_cor <- Airbnb_Shanghai_2021_cor[complete.cases(Airbnb_Shanghai_2021_cor), ]
+correlation_matrix <- cor(Airbnb_Shanghai_2021_cor, method = "spearman")
+corrplot(correlation_matrix, method = "color")
+
+```
+
+```{r exploratory data analysis}
+#############################################
+# Exploratory Data Analysis #
+#############################################
+### Disctribution of Shanghai Airbnb Price
+background_canvas<- theme(panel.grid.major =element_blank(),
+                           panel.grid.minor =element_blank(), 
+                           panel.background =element_blank(), 
+                           axis.line.x =element_line(color ="black"),
+                           axis.line.y =element_line(color ="black"),
+                           legend.key =element_rect(fill ="white"),
+                           text =element_text(size =15))
+
+par(mfrow=c(2,1))
+ggplot(Airbnb_Shanghai_2021) + 
+  background_canvas+
+  geom_histogram(aes(price),fill = 'orange',alpha = 0.85,binwidth = 15) + 
+  theme_minimal(base_size = 13) + xlab("Price") + ylab("Frequency") + 
+  ggtitle("The Distrubition of Price in Shanghai 2021") 
+```
+
+```{r log10 transformation}
+ ### Transformed distribution of Shanghai Airbnb Price with log10 transformation of x-axis
+#Transformed distribution of Price
+ggplot(Airbnb_Shanghai_2021, aes(price)) +
+  background_canvas+
+  geom_histogram(bins = 30, aes(y = ..density..), color = "black", fill = "orange") + 
+  geom_density(alpha = 0.2, color = "red") +
+  ggtitle("Transformed distribution of price (Display in RMB, 1$≈6.5RMB )",
+  subtitle = expression("With" ~'log'[10] ~ "transformation of x-axis")) + 
+  scale_x_log10()+
+  geom_vline(xintercept = round(mean(Airbnb_Shanghai_2021$price), 2), size = 1, linetype = 3) +
+  scale_x_log10() +
+  annotate("text", x = 1800, y = 0.75,label = paste("Mean price = ", paste0(round(mean(Airbnb_Shanghai_2021$price), 2), "RMB")),
+           color =  "#32CD32", size = 6)
+```
+```{r neighborhood mean price}
+#############################################
+      #  neighborhood mean price #
+#############################################
+airbnb_neighbourhood <- Airbnb_Shanghai_2021 %>%
+  group_by(neighbourhood) %>%
+  summarise(price = round(mean(price), 2))
+
+
+ggplot(Airbnb_Shanghai_2021, aes(price)) +
+  geom_histogram(bins = 30, aes(y = ..density..), fill = "orange") + 
+  geom_density(alpha = 0.2, fill = "red") +
+  background_canvas +
+  ggtitle("Transformed distribution of price\n by neighbourhood groups",
+          subtitle = expression("With" ~'log'[10] ~ "transformation of x-axis")) +
+  geom_vline(data = airbnb_neighbourhood, aes(xintercept = price), size = 1, linetype = 3) +
+  geom_text(data = airbnb_neighbourhood,y = 1.5, aes(x = price + 1400, label = paste("Mean  = ",price)), color = "#32CD32", size = 3) +
+  facet_wrap(~neighbourhood) +
+  scale_x_log10() 
+```
+
+```{r average price by different/room type}
+#############################################
+# Average Price by Different/Room Type #
+#############################################
+mean_room_type <- aggregate(list(average_price = Airbnb_Shanghai_2021$price),
+                            list(room_type = Airbnb_Shanghai_2021$room_type), mean)
+mean_room_type
+### Average Price by Room Type
+ggplot(data = mean_room_type, aes(x=room_type, y=average_price))+
+  coord_flip()+
+  geom_segment(aes(xend=room_type, yend=0, color = room_type), size = 2) +
+  geom_point(size=6, mapping = aes(color = room_type))+
+  # theme_minimal()+
+  geom_text(aes(label=average_price), vjust = -1.5)+
+  background_canvas+
+   labs(title = "Average price by Room type in Shanghai 2021",
+       x = "Room Type", y = "Average Price")
+```
+
+```{r neighborhood analysis}
+#############################################
+      #  Neighborhood Analysis #
+#############################################
+# Take a look at the number of rental airbnbs in each neighbourhood, It is a long list and in the picture below, only the higher frequency end is displayed.
+freq_area <- data.frame(cbind(Frequency = table(Airbnb_Shanghai_2021$neighbourhood), Percent = prop.table(table(Airbnb_Shanghai_2021$neighbourhood)) * 100))
+freq_area <- freq_area[order(freq_area$Frequency),]
+freq_area
+
+tema <- theme(plot.title = element_text(size = 18, hjust = .5),
+              axis.text.x = element_text(size = 8, angle=45, face = "bold"),
+              axis.text.y = element_text(size = 8, angle=10, face = "bold"),
+              axis.title.x = element_text(size = 7),
+              axis.title.y = element_text(size = 7),
+              legend.text = element_text(size = 14, face = "bold"))
+
+freq_area_df <- data.frame(neighbourhood = row.names(tail(freq_area, 10)), Frequency = tail(freq_area, 10)$Frequency)
+freq_area_df
+options(repr.plot.width=20, repr.plot.height=10)
+ggplot(data = freq_area_df, mapping = aes(x = neighbourhood, y = Frequency)) +
+  theme_minimal() + 
+  geom_point(size = 4, color = "darkblue") +
+  ggtitle("TOP 10 most frequent neighbourhood in Shanghai City") +
+  xlab("") +
+  geom_line(color = "black", size = 1, linetype= 17, group = 2, alpha = .5) + 
+  geom_bar(stat = "identity", mapping = aes(fill = neighbourhood, color = neighbourhood), alpha = .8, size = .7) +   
+  tema
+```
+
+```{r top10 highest prices}
+### Take a look at the top 10 neighborhoods 
+#### Top10 Highest Prices
+top_10_neighbourhood <- aggregate(list(Airbnb_Shanghai_2021$price), list(Airbnb_Shanghai_2021$neighbourhood), mean)
+colnames(top_10_neighbourhood) <- c("neighbourhood", "Average_price_per_neighborhood")
+top_10_neighbourhood <- top_10_neighbourhood[order(top_10_neighbourhood$Average_price_per_neighborhood),]
+top_10_neighbourhood <- tail(top_10_neighbourhood, 12)
+top_10_neighbourhood <- head(top_10_neighbourhood, 10)
+r <- c()
+for(i in 10:1){r <- c(r, i)}
+row.names(top_10_neighbourhood) <- r
+top_10_neighbourhood
+
+
+tema <- theme(
+  plot.title = element_text(size = 15, hjust = .5),
+  axis.text.x = element_text(size = 6, face = "bold"),
+  axis.text.y = element_text(size = 6, face = "bold"),
+  axis.title.x = element_text(size = 7),
+  axis.title.y = element_text(size = 7),
+  legend.position = "none")
+
+tema1 <- theme(
+  plot.title = element_text(size = 15, hjust = .5),
+  axis.text.x = element_text(size = 6, face = "bold"),
+  axis.text.y = element_text(size = 6, face = "bold"),
+  axis.title.x = element_text(size = 7),
+  axis.title.y = element_text(size = 7),
+  legend.position="none")
+
+options(repr.plot.width=20, repr.plot.height=11)
+most_expensive_plot_a <- ggplot(data = top_10_neighbourhood, mapping = aes(x = neighbourhood, y = Average_price_per_neighborhood)) +
+  geom_bar(stat = "identity", mapping = aes(fill = neighbourhood, color = neighbourhood), alpha = .8, size = .7) +
+  geom_label(mapping = aes(label = round(Average_price_per_neighborhood, 2)), size = 3, fill = "#F5FFFA", fontface = "bold") +
+  coord_flip() +
+  theme_ipsum() + 
+  ggtitle("TOP 10 most expensive neighborhoods in Shanghai City") +
+  xlab("") +
+  ylab("") +
+  tema
+
+most_expensive_plot_b <- ggplot(data = top_10_neighbourhood, mapping = aes(x = neighbourhood, y = Average_price_per_neighborhood)) +
+  geom_bar(stat = "identity", mapping = aes(fill = neighbourhood, color = neighbourhood), alpha = .8, size = .7) +
+  theme_ipsum() + 
+  ggtitle("TOP 10 most expensive neighborhoods in Shanghai City") +
+  xlab("") +
+  ylab("") +
+  tema1
+
+plot_grid(most_expensive_plot_a, most_expensive_plot_b + coord_polar(), ncol=2, nrow=1)
+```
+
+```{r top10 lowest neighborhoods}
+### Top 10 Lowest Neighborhoods
+top_10_lowest_neighbourhood <- aggregate(list(Airbnb_Shanghai_2021$price), list(Airbnb_Shanghai_2021$neighbourhood), mean)
+colnames(top_10_lowest_neighbourhood) <- c("neighbourhood", "Average_price_per_neighborhood")
+top_10_lowest_neighbourhood <- top_10_lowest_neighbourhood[order(top_10_lowest_neighbourhood$Average_price_per_neighborhood),]
+top_10_lowest_neighbourhood
+top_10_lowest_neighbourhood <- tail(top_10_lowest_neighbourhood, 10)
+r <- c()
+for(i in 1:10){r <- c(r, i)}
+row.names(top_10_lowest_neighbourhood) <- r
+top_10_lowest_neighbourhood
+
+tema <- theme(plot.title = element_text(size = 15, hjust = .5),
+              axis.text.x = element_text(size = 6, angle=15, face = "bold"),
+              axis.text.y = element_text(size = 6, angle=10, face = "bold"),
+              axis.title.x = element_text(size = 7),
+              axis.title.y = element_text(size = 7),
+              legend.position = "none")
+
+options(repr.plot.width=20, repr.plot.height=10)
+lowest_neighborhoods_plot_a <- ggplot(data = top_10_lowest_neighbourhood, mapping = aes(x = neighbourhood, y = Average_price_per_neighborhood)) +
+  geom_bar(stat = "identity", mapping = aes(fill = neighbourhood, color = neighbourhood), alpha = .8, size = .7) +
+  geom_label(mapping = aes(label = round(Average_price_per_neighborhood, 2)), size = 3, fill = "#F5FFFA", fontface = "bold") +
+  theme_ipsum() + 
+  ggtitle("TOP 10 cheapest neighborhoods in Shanghai City ") +
+  xlab("") +
+  ylab("") +
+  tema
+lowest_neighborhoods_plot_a
+```
+
+```{r relationship price and reviews}
+#############################################
+# The Relationship between Price and Reviews#
+#############################################
+ggplot(Airbnb_Shanghai_2021, aes(number_of_reviews, price)) +
+  theme(axis.title = element_text(), axis.title.x = element_text()) +
+  geom_point(aes(size = price), alpha = 0.05, color = "red") +
+  background_canvas+
+  xlab("Number of reviews") +
+  ylab("Price") +
+  ggtitle("Relationship between prices number of reviews",
+          subtitle = "The most expensive houses have small number of reviews")
+## The most expensive houses have small number of reviews
+```
+
+```{r Map House Distribution}
+
+#############################################
+   # Map for Airbnb House Distribution #
+#############################################
+#ggmap  - an object of class ggmap (from function get_map)
+height <- max(Airbnb_Shanghai_2021$latitude) - min(Airbnb_Shanghai_2021$latitude)
+width <- max(Airbnb_Shanghai_2021$longitude) - min(Airbnb_Shanghai_2021$longitude)
+Canvas_borders <- c(bottom  = min(Airbnb_Shanghai_2021$latitude)  - 0.05 * height, 
+                    top = max(Airbnb_Shanghai_2021$latitude)  + 0.05 * height,
+                    left = min(Airbnb_Shanghai_2021$longitude) - 0.05 * width,
+                    right = max(Airbnb_Shanghai_2021$longitude) + 0.05 * width)
+# The full list of map types is “terrain”, “terrain-background”, “terrain-labels”, “terrain-lines”, “toner”, “toner-2010”, “toner-2011”, “toner-background”, “toner-hybrid”, “toner-labels”, “toner-lines”, “toner-lite”, “watercolor”. 
+map <- get_stamenmap(Canvas_borders, zoom = 10, maptype = "toner-lite")
+ggmap(map) +
+  geom_point(data = Airbnb_Shanghai_2021, mapping = aes(x = longitude, y = latitude, 
+                                          col = log(price))) +
+  scale_color_distiller(palette = "RdYlGn", direction = 1)
+```
+
+```{r price prediction data clean}
+#############################################
+        # Price Prediction #
+#############################################
+Airbnb_Shanghai_2021 <- select(Airbnb_Shanghai_2021,-c(neighbourhood_group))
+Airbnb_Shanghai_2021
+
+Airbnb_Shanghai_2021 <- Airbnb_Shanghai_2021 %>% mutate(id = row_number())
+airbnb_train <- Airbnb_Shanghai_2021 %>% sample_frac(.7) %>% filter(price > 0)
+airbnb_test  <- anti_join(Airbnb_Shanghai_2021, airbnb_train, by = 'id') %>% filter(price > 0)
+head(airbnb_train)
+# sanity check
+nrow(airbnb_train) + nrow(airbnb_test) == nrow(Airbnb_Shanghai_2021 %>% filter(price > 0))
+
+
+#Model1
+model1<- lm(log(price)~ minimum_nights+number_of_reviews+reviews_per_month+availability_365+latitude+longitude+calculated_host_listings_count+room_type+neighbourhood, data = airbnb_train)
+summary(model1)
+
+
+AIC(model1)
+BIC(model1)
+
+
+airbnb_trained_filtered <- airbnb_train %>% filter(price < quantile(airbnb_train$price, 0.9) & price > quantile(airbnb_train$price, 0.1))%>%drop_na()
+# learn
+# View(learn)
+## Model2
+model2<- lm(log(price)~ number_of_reviews+reviews_per_month+availability_365+latitude+calculated_host_listings_count+room_type+neighbourhood, data = airbnb_trained_filtered)
+summary(model2)
+
+AIC(model2)
+BIC(model2)
+
+```
+
+##### References
+[1] <https://rstudio.github.io/DT/> DT package instruction
+
+[2] <https://cran.r-project.org/web/packages/hrbrthemes/hrbrthemes.pdf> hrbrthemes package instruction
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
